@@ -33,6 +33,8 @@ struct State {
     model_uniform: model::ModelUniform,
     model_buffer: wgpu::Buffer,
     model_bind_group: wgpu::BindGroup,
+    instances: Vec<model::Instance>,
+    instance_buffer: wgpu::Buffer,
 }
 
 impl State {
@@ -158,6 +160,18 @@ impl State {
             zfar: 100.0,
         };
 
+        // Create instances
+        let instances = model::Instance::create_instances();
+        let instance_data = instances
+            .iter()
+            .map(model::Instance::to_raw)
+            .collect::<Vec<_>>();
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(&instance_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
 
@@ -246,8 +260,8 @@ impl State {
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",             // 1.
-                buffers: &[vertex::Vertex::desc()], // 2.
+                entry_point: "vs_main",
+                buffers: &[vertex::Vertex::desc(), model::InstanceRaw::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 // 3.
@@ -302,6 +316,8 @@ impl State {
             model_uniform,
             model_buffer,
             model_bind_group,
+            instances,
+            instance_buffer,
         }
     }
 
@@ -399,8 +415,9 @@ impl State {
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(2, &self.model_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _);
         }
 
         // submit will accept anything that implements IntoIter
