@@ -79,6 +79,7 @@ struct State {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    camera_controller: camera_controller::CameraController,
 }
 
 impl State {
@@ -237,6 +238,9 @@ impl State {
             label: Some("camera_bind_group"),
         });
 
+        // Create the camera controller
+        let camera_controller = camera_controller::CameraController::new(0.2);
+
         // Load shader
         let shader = device.create_shader_module(&wgpu::include_wgsl!("shader.wgsl"));
 
@@ -303,6 +307,7 @@ impl State {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
+            camera_controller,
         }
     }
 
@@ -316,6 +321,7 @@ impl State {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
+        self.camera_controller.process_events(event);
         match event {
             WindowEvent::CursorMoved {
                 // device_id,
@@ -343,7 +349,13 @@ impl State {
     }
 
     fn update(&mut self) {
-        // todo!()
+        self.camera_controller.update_camera(&mut self.camera);
+        self.camera_uniform.update_view_proj(&self.camera);
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera_uniform]),
+        )
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
