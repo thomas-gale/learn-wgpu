@@ -29,6 +29,10 @@ struct State {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     camera_controller: camera_controller::CameraController,
+    model: model::Model,
+    model_uniform: model::ModelUniform,
+    model_buffer: wgpu::Buffer,
+    model_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -190,6 +194,39 @@ impl State {
         // Create the camera controller
         let camera_controller = camera_controller::CameraController::new(0.05);
 
+        // Dynamic model transformation setup (challenge exercise)
+
+        let model = model::Model::new();
+        let mut model_uniform = model::ModelUniform::new();
+        model_uniform.update_transformation_matrix(&model);
+        let model_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Model Transformation Matrix Buffer"),
+            contents: bytemuck::cast_slice(&[model_uniform]), // This works because the crepr and plain old data layout of the struct.
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let model_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("model_transformation_bind_group_layout"),
+            });
+        let model_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &model_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: model_buffer.as_entire_binding(),
+            }],
+            label: Some("model_transformation_bind_group"),
+        });
+
         // Load shader
         let shader = device.create_shader_module(&wgpu::include_wgsl!("shader.wgsl"));
 
@@ -197,7 +234,11 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
+                bind_group_layouts: &[
+                    &texture_bind_group_layout,
+                    &camera_bind_group_layout,
+                    &model_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -257,6 +298,10 @@ impl State {
             camera_buffer,
             camera_bind_group,
             camera_controller,
+            model,
+            model_uniform,
+            model_buffer,
+            model_bind_group,
         }
     }
 
@@ -298,13 +343,22 @@ impl State {
     }
 
     fn update(&mut self) {
+        // Check for updates from camera
         self.camera_controller.update_camera(&mut self.camera);
         self.camera_uniform.update_view_proj(&self.camera);
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
-        )
+        );
+        // Update the model
+        self.model.rotate_z_delta(0.05);
+        self.model_uniform.update_transformation_matrix(&self.model);
+        self.queue.write_buffer(
+            &self.model_buffer,
+            0,
+            bytemuck::cast_slice(&[self.model_uniform]),
+        );
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -343,6 +397,7 @@ impl State {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.model_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);

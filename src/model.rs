@@ -1,5 +1,6 @@
 use crate::vertex::Vertex;
 
+// Fixed model data
 pub const VERTICES: &[Vertex] = &[
     Vertex {
         position: [-0.0868241, 0.49240386, 0.0],
@@ -24,3 +25,41 @@ pub const VERTICES: &[Vertex] = &[
 ];
 
 pub const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
+
+pub struct Model {
+    z_rot: f32,
+}
+
+impl Model {
+    pub fn new() -> Model {
+        Model { z_rot: 0.0 }
+    }
+    pub fn build_transformation_matrix(&self) -> cgmath::Matrix4<f32> {
+        cgmath::Matrix4::from_angle_z(cgmath::Deg(self.z_rot))
+    }
+    pub fn rotate_z_delta(&mut self, z_rot_delta: f32) {
+        self.z_rot += z_rot_delta;
+    }
+}
+
+#[repr(C)]
+// This is so we can store this in a buffer
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ModelUniform {
+    // We can't use cgmath with bytemuck directly so we'll have
+    // to convert the Matrix4 into a 4x4 f32 array
+    transformation_matrix: [[f32; 4]; 4],
+}
+
+impl ModelUniform {
+    pub fn new() -> Self {
+        use cgmath::SquareMatrix;
+        Self {
+            transformation_matrix: cgmath::Matrix4::identity().into(),
+        }
+    }
+
+    pub fn update_transformation_matrix(&mut self, model: &Model) {
+        self.transformation_matrix = model.build_transformation_matrix().into();
+    }
+}
